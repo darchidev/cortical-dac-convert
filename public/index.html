@@ -95,7 +95,8 @@
   "channels": 16,
   "frames": 48000,
   "attributes": { "sample_rate": 25000 },
-  "samples": [0, -1, 2, ...]
+  "samples": [0, -1, 2, ...]                              
+}
 }</pre>
       <p style="font-size:.85rem;color:#888;margin-top:.5rem;">Files larger than ~4&nbsp;MB are streamed. For best results on large files, use the browser tool below.</p>
     </div>
@@ -183,15 +184,14 @@ async function convertFile() {
     const samplesArr = Array.from(samples);
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
 
-    lastResult = {
-      channels,
-      frames: totalFrames,
-      attributes: attrs,
-      samples: samplesArr,
-    };
+    lastResult = { channels, frames: totalFrames, attributes: attrs, samples: samplesArr };
+
+    const preview = JSON.stringify({ channels, frames: totalFrames, attributes: attrs, samples: samplesArr.slice(0, 50) }, null, 2);
+    const lines = preview.split('\n');
+    const truncated = lines.slice(0, 22).join('\n') + '\n  ...';
 
     status.innerHTML = `<span style="color:#059669;">&#10003;</span> Converted in ${elapsed}s &mdash; ${channels} channels, ${totalFrames.toLocaleString()} frames`;
-    result.innerHTML = `<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`;
+    result.innerHTML = `<pre>${escapeHtml(truncated)}</pre>`;
     downloadBtn.disabled = false;
   } catch (err) {
     status.textContent = '';
