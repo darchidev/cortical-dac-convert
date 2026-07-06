@@ -1,0 +1,19 @@
+{
+  "name": "cortical-dac-convert",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel serverless function that converts CL1 H5 recording files to JSON",
+  "type": "module",
+  "scripts": {
+    "dev": "vc dev",
+    "deploy": "vc --prod"
+  },
+  "dependencies": {
+    "h5wasm": "^0.10.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "typescript": "^5.8.3",
+    "vercel": "^41.0.0"
+  }
+}

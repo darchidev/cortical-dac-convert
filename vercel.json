@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/convert.ts": {
+      "maxDuration": 30,
+      "memory": 512
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/api/convert" }
+  ]
+}
