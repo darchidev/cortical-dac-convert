@@ -1,42 +1,69 @@
-# 🧠 Cortical DAC — H5 to JSON Converter
+# Cortical-DAC Convert
 
-> Standalone Vercel serverless function that converts CL1 HDF5 recording files (`.h5`) to plain JSON.
+> Convert CL1 HDF5 recording files (`.h5`) to JSON — entirely in your browser.
 
 Part of the [Cortical DAC](https://github.com/darchidev/cortical-dac) ecosystem.
 
-## How it works
+## Usage
 
-1. Upload an `.h5` recording file via `POST`
-2. h5wasm reads the `samples` dataset + HDF5 attributes
-3. Returns JSON with metadata and sample data
+### Browser (no upload, no size limits)
 
-## API
+1. Go to **[cl1.dariochiapperini.dev](https://cl1.dariochiapperini.dev)**
+2. Select your `.h5` file
+3. Click **Convert**
+4. Preview or download the JSON result
 
-### `POST /api/convert`
+The file is processed locally via WebAssembly — it never leaves your machine.
 
-**Request:** `multipart/form-data` with an `.h5` file
+### API (for CLI / automation)
 
-**Response (small files):**
+```bash
+curl -X POST https://cl1.dariochiapperini.dev/api/convert \
+  -F "file=@recording.h5"
+```
+
+**Response:**
+
 ```json
 {
   "id": "conv_1712345678_abc123",
   "channels": 64,
   "frames": 5000,
-  "attributes": { "startTimestamp": 12345, ... },
+  "attributes": {
+    "sample_rate": 25000,
+    "device_id": "CL1-12345"
+  },
   "samples": [0, 1, -2, 3, ...]
 }
 ```
 
-**Response (large files >4MB):** Streamed JSON download (`Content-Disposition: attachment`)
+Files larger than ~4 MB are streamed. For best results on large files, use the [browser tool](https://cl1.dariochiapperini.dev) instead.
+
+## Tech stack
+
+- **[h5wasm](https://github.com/usnistgov/h5wasm)** — HDF5 pure JS/WASM implementation
+- **[Vercel](https://vercel.com)** — serverless API deployment
+- **TypeScript** — API handler
+- **Vanilla HTML/JS** — browser UI
+
+## Local development
+
+```bash
+npm install
+npm run dev     # uses vercel dev
+```
 
 ## Deploy
 
 ```bash
-npm install
-npx vercel --prod
+npm run deploy   # vercel --prod
 ```
 
-## Credit
+## License
 
-Built using [h5wasm](https://github.com/usnistgov/h5wasm) — HDF5 pure JS/WASM implementation.
-Original CL1 API reference: [Cortical Labs cl-docs](https://github.com/cortical-labs/cl-docs).
+MIT — see [LICENSE](LICENSE).
+
+## Credits
+
+- [h5wasm](https://github.com/usnistgov/h5wasm) by NIST
+- [Cortical Labs cl-docs](https://github.com/cortical-labs/cl-docs) — CL1 API reference
