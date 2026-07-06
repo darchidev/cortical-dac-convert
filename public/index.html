@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cortical-DAC Convert API</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+  .container { max-width: 960px; margin: 0 auto; padding: 2rem; }
+
+  header { text-align: center; margin-bottom: 2rem; }
+  header h1 { font-size: 2rem; color: #111; }
+  header p { color: #666; margin-top: .5rem; }
+
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 1.5rem; overflow: hidden; }
+  .card-header { padding: 1rem 1.5rem; border-bottom: 1px solid #eee; font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: .5rem; }
+  .card-body { padding: 1.5rem; }
+
+  .endpoint { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+  .method { background: #22c55e; color: #fff; font-weight: 700; font-size: .8rem; padding: .25rem .6rem; border-radius: 4px; letter-spacing: .5px; }
+  .path { font-family: 'SFMono-Regular', Consolas, monospace; font-size: .95rem; color: #333; }
+  .desc { color: #666; font-size: .9rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: .75rem 1rem; border-bottom: 1px solid #eee; }
+  th { background: #fafafa; font-weight: 600; color: #555; }
+  td:first-child { font-family: 'SFMono-Regular', Consolas, monospace; font-size: .85rem; }
+  .required { color: #ef4444; font-size: .75rem; font-weight: 600; margin-left: .25rem; }
+
+  pre { background: #1e293b; color: #e2e8f0; padding: 1rem 1.25rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+
+  .response-example { margin-top: 1rem; }
+  .response-example pre { background: #f8fafc; color: #333; border: 1px solid #e2e8f0; }
+
+  .try-section { margin-top: 1.5rem; }
+  .file-input { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .file-input input[type="file"] { flex: 1; padding: .5rem; border: 1px dashed #cbd5e1; border-radius: 4px; background: #fafafa; }
+  .btn { background: #2563eb; color: #fff; border: none; padding: .6rem 1.5rem; border-radius: 6px; font-weight: 500; cursor: pointer; }
+  .btn:hover { background: #1d4ed8; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  #result { margin-top: 1rem; }
+  #result pre { max-height: 400px; overflow-y: auto; }
+  .status-badge { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .75rem; font-weight: 600; }
+  .status-200 { background: #dcfce7; color: #166534; }
+  .status-400 { background: #fef3c7; color: #92400e; }
+  .status-500 { background: #fce4ec; color: #c62828; }
+  footer { text-align: center; color: #999; font-size: .8rem; margin-top: 3rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Cortical-DAC Convert API</h1>
+    <p>Convert CL1 H5 recording files to JSON</p>
+  </header>
+
+  <div class="card">
+    <div class="card-header">
+      <span>POST</span> <span style="font-family: monospace;">/api/convert</span>
+      <span style="margin-left: auto; font-size: .8rem; font-weight: 400; color: #666;">Convert H5 to JSON</span>
+    </div>
+    <div class="card-body">
+
+      <p style="margin-bottom: 1rem;">Upload a <strong>.h5</strong> recording file from the <strong>CL1</strong> device and receive a JSON response with decoded samples, channel count, and metadata attributes.</p>
+
+      <table>
+        <thead>
+          <tr><th style="width: 25%;">Parameter</th><th style="width: 15%;">Type</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>file<span class="required">*</span></td><td>File (.h5)</td><td>H5 recording file from CL1 device</td></tr>
+        </tbody>
+      </table>
+
+      <h4 style="margin: 1.5rem 0 .5rem;">Example request</h4>
+      <pre>curl -X POST https://cortical-dac-convert.vercel.app/api/convert \
+  -F "file=@recording.h5"</pre>
+
+      <h4 style="margin: 1.5rem 0 .5rem;">Response</h4>
+      <p style="font-size: .9rem; color: #666; margin-bottom: .75rem;">
+        <span class="status-badge status-200">200 OK</span>
+        &mdash; JSON with samples, channels, frames, and H5 attributes
+      </p>
+      <div class="response-example">
+<pre>{
+  "id": "conv_1749123456_abc123",
+  "channels": 16,
+  "frames": 48000,
+  "attributes": {
+    "sample_rate": 25000,
+    "device_id": "CL1-12345"
+  },
+  "samples": [0, -1, 2, ...]
+}</pre>
+      </div>
+
+      <div class="try-section">
+        <h4 style="margin-bottom: .75rem;">Try it out</h4>
+        <div class="file-input">
+          <input type="file" id="h5File" accept=".h5">
+          <button class="btn" id="sendBtn" onclick="sendFile()">Send</button>
+        </div>
+        <div id="result"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://github.com/darchidev/cortical-dac-convert">GitHub</a>
+  </footer>
+</div>
+
+<script>
+async function sendFile() {
+  const input = document.getElementById('h5File');
+  const btn = document.getElementById('sendBtn');
+  const result = document.getElementById('result');
+
+  if (!input.files.length) {
+    result.innerHTML = '<p style="color:#ef4444;margin-top:.5rem;">Select a .h5 file first</p>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  result.innerHTML = '';
+
+  const form = new FormData();
+  form.append('file', input.files[0]);
+
+  try {
+    const res = await fetch('/api/convert', { method: 'POST', body: form });
+    const data = await res.json();
+
+    const statusClass = res.ok ? 'status-200' : res.status === 400 ? 'status-400' : 'status-500';
+    result.innerHTML = `
+      <div style="margin-top:1rem;">
+        <span class="status-badge ${statusClass}" style="margin-bottom:.5rem;display:inline-block">${res.status} ${res.statusText}</span>
+        <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+      </div>`;
+  } catch (err) {
+    result.innerHTML = `<p style="color:#ef4444;margin-top:.5rem;">Error: ${escapeHtml(err.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

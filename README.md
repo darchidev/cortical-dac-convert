@@ -2,7 +2,7 @@
 
 > Standalone Vercel serverless function that converts CL1 HDF5 recording files (`.h5`) to plain JSON.
 
-Part of the [Cortical DAC](https://github.com/anomalyco/cortical-dac) ecosystem.
+Part of the [Cortical DAC](https://github.com/darchidev/cortical-dac) ecosystem.
 
 ## How it works
 
