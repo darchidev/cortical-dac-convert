@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cortical-DAC Convert API</title>
+<title>Cortical-DAC Convert</title>
+<script src="https://cdn.jsdelivr.net/npm/h5wasm@0.10.3/dist/h5wasm.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
@@ -17,10 +18,8 @@
   .card-header { padding: 1rem 1.5rem; border-bottom: 1px solid #eee; font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: .5rem; }
   .card-body { padding: 1.5rem; }
 
-  .endpoint { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
-  .method { background: #22c55e; color: #fff; font-weight: 700; font-size: .8rem; padding: .25rem .6rem; border-radius: 4px; letter-spacing: .5px; }
-  .path { font-family: 'SFMono-Regular', Consolas, monospace; font-size: .95rem; color: #333; }
-  .desc { color: #666; font-size: .9rem; }
+  .method { background: #22c55e; color: #fff; font-weight: 700; font-size: .8rem; padding: .25rem .6rem; border-radius: 4px; letter-spacing: .5px; display: inline-block; }
+  .path { font-family: 'SFMono-Regular', Consolas, monospace; font-size: .95rem; }
 
   table { width: 100%; border-collapse: collapse; font-size: .9rem; }
   th, td { text-align: left; padding: .75rem 1rem; border-bottom: 1px solid #eee; }
@@ -29,41 +28,53 @@
   .required { color: #ef4444; font-size: .75rem; font-weight: 600; margin-left: .25rem; }
 
   pre { background: #1e293b; color: #e2e8f0; padding: 1rem 1.25rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
-
-  .response-example { margin-top: 1rem; }
-  .response-example pre { background: #f8fafc; color: #333; border: 1px solid #e2e8f0; }
+  .pre-light { background: #f8fafc; color: #333; border: 1px solid #e2e8f0; }
 
   .try-section { margin-top: 1.5rem; }
-  .file-input { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .file-input input[type="file"] { flex: 1; padding: .5rem; border: 1px dashed #cbd5e1; border-radius: 4px; background: #fafafa; }
-  .btn { background: #2563eb; color: #fff; border: none; padding: .6rem 1.5rem; border-radius: 6px; font-weight: 500; cursor: pointer; }
+  .file-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .file-row input[type="file"] { flex: 1; padding: .5rem; border: 1px dashed #cbd5e1; border-radius: 4px; background: #fafafa; }
+  .btn { background: #2563eb; color: #fff; border: none; padding: .6rem 1.5rem; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: .9rem; }
   .btn:hover { background: #1d4ed8; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-download { background: #059669; }
+  .btn-download:hover { background: #047857; }
+  .btn-download:disabled { opacity: .5; cursor: not-allowed; }
+
+  .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: .75rem 1rem; font-size: .9rem; color: #1e40af; margin-bottom: 1rem; display: flex; align-items: start; gap: .5rem; }
+  .info-box.warn { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+
   #result { margin-top: 1rem; }
-  #result pre { max-height: 400px; overflow-y: auto; }
-  .status-badge { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .75rem; font-weight: 600; }
-  .status-200 { background: #dcfce7; color: #166534; }
-  .status-400 { background: #fef3c7; color: #92400e; }
-  .status-500 { background: #fce4ec; color: #c62828; }
+  #result pre { max-height: 500px; overflow-y: auto; }
+  .loading { display: flex; align-items: center; gap: .75rem; padding: 1rem 0; color: #555; }
+  .spinner { width: 20px; height: 20px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   footer { text-align: center; color: #999; font-size: .8rem; margin-top: 3rem; }
+  footer a { color: #666; }
 </style>
 </head>
 <body>
 <div class="container">
 
   <header>
-    <h1>Cortical-DAC Convert API</h1>
+    <h1>Cortical-DAC Convert</h1>
     <p>Convert CL1 H5 recording files to JSON</p>
   </header>
 
+  <div class="info-box">
+    <span>&#9889;</span>
+    <span>The conversion runs entirely in your browser via WebAssembly — no upload needed, no file size limits.</span>
+  </div>
+
   <div class="card">
     <div class="card-header">
-      <span>POST</span> <span style="font-family: monospace;">/api/convert</span>
-      <span style="margin-left: auto; font-size: .8rem; font-weight: 400; color: #666;">Convert H5 to JSON</span>
+      <span class="method">POST</span>
+      <span class="path">/api/convert</span>
+      <span style="margin-left: auto; font-size: .8rem; font-weight: 400; color: #666;">Server API (for CLI/curl)</span>
     </div>
     <div class="card-body">
 
-      <p style="margin-bottom: 1rem;">Upload a <strong>.h5</strong> recording file from the <strong>CL1</strong> device and receive a JSON response with decoded samples, channel count, and metadata attributes.</p>
+      <p style="margin-bottom: 1rem;">For automation or non-browser usage, send a <strong>POST</strong> request with a multipart file upload.</p>
 
       <table>
         <thead>
@@ -74,36 +85,40 @@
         </tbody>
       </table>
 
-      <h4 style="margin: 1.5rem 0 .5rem;">Example request</h4>
+      <h4 style="margin: 1.5rem 0 .5rem;">Example</h4>
       <pre>curl -X POST https://cortical-dac-convert.vercel.app/api/convert \
   -F "file=@recording.h5"</pre>
 
       <h4 style="margin: 1.5rem 0 .5rem;">Response</h4>
-      <p style="font-size: .9rem; color: #666; margin-bottom: .75rem;">
-        <span class="status-badge status-200">200 OK</span>
-        &mdash; JSON with samples, channels, frames, and H5 attributes
-      </p>
-      <div class="response-example">
-<pre>{
+      <pre class="pre-light">{
   "id": "conv_1749123456_abc123",
   "channels": 16,
   "frames": 48000,
-  "attributes": {
-    "sample_rate": 25000,
-    "device_id": "CL1-12345"
-  },
+  "attributes": { "sample_rate": 25000 },
   "samples": [0, -1, 2, ...]
 }</pre>
+      <p style="font-size:.85rem;color:#888;margin-top:.5rem;">Files larger than ~4&nbsp;MB are streamed. For best results on large files, use the browser tool below.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span>&#128187;</span> Browser Converter (no size limit)
+    </div>
+    <div class="card-body">
+
+      <div class="info-box warn">
+        <span>&#9432;</span>
+        <span>Processing happens locally. Your file never leaves your device.</span>
       </div>
 
-      <div class="try-section">
-        <h4 style="margin-bottom: .75rem;">Try it out</h4>
-        <div class="file-input">
-          <input type="file" id="h5File" accept=".h5">
-          <button class="btn" id="sendBtn" onclick="sendFile()">Send</button>
-        </div>
-        <div id="result"></div>
+      <div class="file-row">
+        <input type="file" id="h5File" accept=".h5">
+        <button class="btn" id="convertBtn">Convert</button>
+        <button class="btn btn-download" id="downloadBtn" disabled>Download JSON</button>
       </div>
+      <div id="status" style="margin-top:.75rem;font-size:.9rem;color:#666;"></div>
+      <div id="result"></div>
 
     </div>
   </div>
@@ -114,51 +129,93 @@
 </div>
 
 <script>
-async function sendFile() {
+let lastResult = null;
+
+document.getElementById('convertBtn').addEventListener('click', convertFile);
+document.getElementById('downloadBtn').addEventListener('click', downloadResult);
+document.getElementById('h5File').addEventListener('change', () => {
+  document.getElementById('result').innerHTML = '';
+  document.getElementById('status').textContent = '';
+});
+
+async function convertFile() {
   const input = document.getElementById('h5File');
-  const btn = document.getElementById('sendBtn');
+  const btn = document.getElementById('convertBtn');
+  const status = document.getElementById('status');
   const result = document.getElementById('result');
+  const downloadBtn = document.getElementById('downloadBtn');
 
   if (!input.files.length) {
-    result.innerHTML = '<p style="color:#ef4444;margin-top:.5rem;">Select a .h5 file first</p>';
+    status.textContent = 'Select a .h5 file first';
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'Uploading...';
-  result.innerHTML = '';
-
-  const form = new FormData();
-  form.append('file', input.files[0]);
+  downloadBtn.disabled = true;
+  lastResult = null;
+  status.textContent = 'Loading h5wasm...';
+  result.innerHTML = '<div class="loading"><div class="spinner"></div>Processing...</div>';
 
   try {
-    const res = await fetch('/api/convert', { method: 'POST', body: form });
-    const text = await res.text();
-    let data, formatted;
-    try {
-      data = JSON.parse(text);
-      formatted = JSON.stringify(data, null, 2);
-    } catch {
-      formatted = text;
+    const t0 = performance.now();
+
+    await h5wasm.ready;
+    const file = input.files[0];
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const memPath = '/tmp/convert.h5';
+    h5wasm.FS.writeFile(memPath, buf);
+
+    const f = new h5wasm.File(memPath, 'r');
+    const ds = f.get('samples');
+    const samples = ds.value;
+    const totalFrames = ds.shape[0];
+    const channels = ds.shape[1];
+
+    const attrs = {};
+    if (f.attrs) {
+      for (const key of Object.keys(f.attrs)) {
+        try { attrs[key] = f.get_attribute(key, true); } catch {}
+      }
     }
-    const statusClass = res.ok ? 'status-200' : res.status === 400 ? 'status-400' : 'status-500';
-    result.innerHTML = `
-      <div style="margin-top:1rem;">
-        <span class="status-badge ${statusClass}" style="margin-bottom:.5rem;display:inline-block">${res.status} ${res.statusText}</span>
-        <pre>${escapeHtml(formatted)}</pre>
-      </div>`;
+    f.close();
+    h5wasm.FS.unlink(memPath);
+
+    const samplesArr = Array.from(samples);
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+
+    lastResult = {
+      channels,
+      frames: totalFrames,
+      attributes: attrs,
+      samples: samplesArr,
+    };
+
+    status.innerHTML = `<span style="color:#059669;">&#10003;</span> Converted in ${elapsed}s &mdash; ${channels} channels, ${totalFrames.toLocaleString()} frames`;
+    result.innerHTML = `<pre>${escapeHtml(JSON.stringify(lastResult, null, 2))}</pre>`;
+    downloadBtn.disabled = false;
   } catch (err) {
-    result.innerHTML = `<p style="color:#ef4444;margin-top:.5rem;">Error: ${escapeHtml(err.message)}</p>`;
+    status.textContent = '';
+    result.innerHTML = `<p style="color:#ef4444;">Error: ${escapeHtml(err.message)}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Send';
   }
 }
 
+function downloadResult() {
+  if (!lastResult) return;
+  const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `recording_${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
 }
 </script>
 </body>
