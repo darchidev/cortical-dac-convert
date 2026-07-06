@@ -99,9 +99,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Stream as downloadable JSON
+    // Stream as JSON
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="${id}.json"`);
     res.write(`{"id":${JSON.stringify(id)},"attributes":${JSON.stringify(attrs)},"channels":${channels},"frames":${totalFrames},"samples":[`);
 
     const total = totalFrames * channels;

@@ -133,13 +133,19 @@ async function sendFile() {
 
   try {
     const res = await fetch('/api/convert', { method: 'POST', body: form });
-    const data = await res.json();
-
+    const text = await res.text();
+    let data, formatted;
+    try {
+      data = JSON.parse(text);
+      formatted = JSON.stringify(data, null, 2);
+    } catch {
+      formatted = text;
+    }
     const statusClass = res.ok ? 'status-200' : res.status === 400 ? 'status-400' : 'status-500';
     result.innerHTML = `
       <div style="margin-top:1rem;">
         <span class="status-badge ${statusClass}" style="margin-bottom:.5rem;display:inline-block">${res.status} ${res.statusText}</span>
-        <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+        <pre>${escapeHtml(formatted)}</pre>
       </div>`;
   } catch (err) {
     result.innerHTML = `<p style="color:#ef4444;margin-top:.5rem;">Error: ${escapeHtml(err.message)}</p>`;
