@@ -128,6 +128,9 @@
 
       <div class="file-row">
         <input type="file" id="h5File" accept=".h5">
+        <label style="font-size:.85rem;display:flex;align-items:center;gap:.3rem;white-space:nowrap;cursor:pointer;">
+          <input type="checkbox" id="uvCheck"> &micro;V
+        </label>
         <button class="btn" id="convertBtn">Convert</button>
         <button class="btn btn-outline" id="optionsBtn" disabled>Advanced Options</button>
         <button class="btn btn-download" id="downloadBtn" disabled>Download JSON</button>
@@ -147,15 +150,17 @@
         <label><input type="checkbox" id="optMeta" checked> Include channels / frames count</label>
       </div>
 
+      <div class="modal-section">
+        <h4>Data</h4>
+        <label><input type="checkbox" id="optSamples" checked> Include samples data</label>
+        <label id="spikesRow" style="display:none"><input type="checkbox" id="optSpikes" checked> Include spikes data</label>
+        <label id="stimsRow" style="display:none"><input type="checkbox" id="optStims" checked> Include stims data</label>
+      </div>
+
       <div class="modal-section" id="attrsSection">
         <h4>Attributes</h4>
         <p class="modal-hint">Select which attributes to include in the JSON output</p>
         <div id="attrCheckboxes"></div>
-      </div>
-
-      <div class="modal-section">
-        <h4>Data</h4>
-        <label><input type="checkbox" id="optSamples" checked> Include samples data</label>
       </div>
 
       <div class="modal-actions">
@@ -176,7 +181,7 @@ let channels = 0;
 let frames = 0;
 let attrs = {};
 let convId = '';
-let samplesParts = []; // sample JSON chunks, first without leading comma
+let samplesParts = [];
 let firstChunk = true;
 let processedFrames = 0;
 let timerStart = 0;
@@ -184,6 +189,10 @@ let includeMeta = true;
 let includeSamples = true;
 let attrSelections = {};
 let estimatedMb = 0;
+let extrasData = {};
+let hasSpikes = false, hasStims = false;
+let includeSpikes = true, includeStims = true;
+let uvConversion = false;
 
 const $ = id => document.getElementById(id);
 
@@ -194,6 +203,8 @@ $('modalCancelBtn').addEventListener('click', closeOptions);
 $('modalDownloadBtn').addEventListener('click', () => {
   includeMeta = $('optMeta').checked;
   includeSamples = $('optSamples').checked;
+  includeSpikes = $('optSpikes').checked;
+  includeStims = $('optStims').checked;
   const cbs = $('attrCheckboxes').querySelectorAll('input[type="checkbox"]');
   cbs.forEach(cb => { attrSelections[cb.dataset.key] = cb.checked; });
   closeOptions();
@@ -219,12 +230,15 @@ function convertFile() {
   $('downloadBtn').disabled = true;
   $('optionsBtn').disabled = true;
   channels = 0; frames = 0; attrs = {};
-  convId = ''; samplesParts = [];
+  convId = ''; samplesParts = []; extrasData = {};
   firstChunk = true; processedFrames = 0; estimatedMb = 0;
   includeMeta = true; includeSamples = true; attrSelections = {};
+  includeSpikes = true; includeStims = true; uvConversion = false;
+  hasSpikes = false; hasStims = false;
   timerStart = performance.now();
 
   status.textContent = 'Starting worker...';
+  uvConversion = $('uvCheck').checked;
   $('result').innerHTML = '<div class="loading"><div class="spinner"></div>Processing...</div>';
 
   try {
@@ -244,8 +258,15 @@ function convertFile() {
           attrSelections = {};
           Object.keys(attrs).forEach(k => { attrSelections[k] = true; });
 
+          hasSpikes = p.hasSpikes;
+          hasStims = p.hasStims;
+
           estimatedMb = ((frames * channels * 7) / (1024 * 1024));
-          status.textContent = 'Processing ' + frames.toLocaleString() + ' frames \u00d7 ' + channels + ' channels (~' + estimatedMb.toFixed(0) + ' MB JSON)...';
+          const extras = [];
+          if (hasSpikes) extras.push(p.spikeCount + ' spikes');
+          if (hasStims) extras.push(p.stimCount + ' stims');
+          const extraStr = extras.length ? ' (' + extras.join(', ') + ')' : '';
+          status.textContent = 'Processing ' + frames.toLocaleString() + ' frames \u00d7 ' + channels + ' channels' + extraStr + ' (~' + estimatedMb.toFixed(0) + ' MB JSON)...';
           break;
         }
 
@@ -273,11 +294,20 @@ function convertFile() {
           break;
         }
 
+        case 'extras': {
+          Object.assign(extrasData, msg.payload);
+          break;
+        }
+
         case 'done': {
           const elapsed = ((performance.now() - timerStart) / 1000).toFixed(1);
+          const extras = [];
+          if (extrasData.spikes) extras.push(extrasData.spikes.length + ' spikes');
+          if (extrasData.stims) extras.push(extrasData.stims.length + ' stims');
+          const extraStr = extras.length ? ' \u00b7 ' + extras.join(', ') : '';
           status.innerHTML =
             '<span style="color:#059669;">\u2713</span> Converted in ' + elapsed +
-            's &mdash; ' + channels + ' channels, ' + frames.toLocaleString() + ' frames';
+            's &mdash; ' + channels + ' channels, ' + frames.toLocaleString() + ' frames' + extraStr;
           $('downloadBtn').disabled = false;
           $('optionsBtn').disabled = false;
           $('convertBtn').disabled = false;
@@ -307,7 +337,7 @@ function convertFile() {
       worker = null;
     };
 
-    worker.postMessage({ type: 'open', file: input.files[0] });
+    worker.postMessage({ type: 'open', file: input.files[0], options: { uvConversion } });
   } catch (err) {
     $('status').textContent = '';
     $('result').innerHTML = '<p style="color:#ef4444;">Error: ' + escapeHtml(err.message) + '</p>';
@@ -338,11 +368,18 @@ function buildJsonPrefix() {
 function downloadResult() {
   const prefix = buildJsonPrefix();
   const parts = [prefix];
+
   if (includeSamples) {
-    parts.push(...samplesParts, ']}');
-  } else {
-    parts.push('}');
+    parts.push(...samplesParts);
   }
+
+  var suffixItems = [];
+  if (includeSamples) suffixItems.push(']');
+  if (includeSpikes && extrasData.spikes) suffixItems.push(',"spikes":' + JSON.stringify(extrasData.spikes));
+  if (includeStims && extrasData.stims) suffixItems.push(',"stims":' + JSON.stringify(extrasData.stims));
+  suffixItems.push('}');
+
+  parts.push(suffixItems.join(''));
 
   const blob = new Blob(parts, { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -373,6 +410,10 @@ function openOptions() {
   }
   $('optMeta').checked = includeMeta;
   $('optSamples').checked = includeSamples;
+  $('optSpikes').checked = includeSpikes;
+  $('optStims').checked = includeStims;
+  $('spikesRow').style.display = extrasData.spikes ? '' : 'none';
+  $('stimsRow').style.display = extrasData.stims ? '' : 'none';
   $('optionsModal').classList.add('show');
 }
 
