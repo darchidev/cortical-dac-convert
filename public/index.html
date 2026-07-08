@@ -337,9 +337,9 @@ function buildJsonPrefix() {
 
 function downloadResult() {
   const prefix = buildJsonPrefix();
-  const parts = [prefix, ...samplesParts];
+  const parts = [prefix];
   if (includeSamples) {
-    parts.push(']}');
+    parts.push(...samplesParts, ']}');
   } else {
     parts.push('}');
   }
