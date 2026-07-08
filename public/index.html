@@ -39,6 +39,19 @@
   .btn-download { background: #059669; }
   .btn-download:hover { background: #047857; }
   .btn-download:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-outline { background: transparent; color: #2563eb; border: 1px solid #2563eb; }
+  .btn-outline:hover { background: #eff6ff; }
+
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+  .modal.show { display: flex; }
+  .modal-content { background: #fff; border-radius: 8px; padding: 1.5rem; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.2); }
+  .modal-content h3 { margin-bottom: 1rem; font-size: 1.15rem; }
+  .modal-section { margin-bottom: 1rem; }
+  .modal-section h4 { font-size: .95rem; margin-bottom: .4rem; color: #444; }
+  .modal-hint { font-size: .82rem; color: #888; margin-bottom: .4rem; }
+  .modal label { display: flex; align-items: center; gap: .4rem; padding: .2rem 0; font-size: .88rem; cursor: pointer; }
+  .modal label input { flex-shrink: 0; }
+  .modal-actions { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #eee; }
 
   .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: .75rem 1rem; font-size: .9rem; color: #1e40af; margin-bottom: 1rem; display: flex; align-items: start; gap: .5rem; }
   .info-box.warn { background: #fef3c7; border-color: #fde68a; color: #92400e; }
@@ -116,11 +129,39 @@
       <div class="file-row">
         <input type="file" id="h5File" accept=".h5">
         <button class="btn" id="convertBtn">Convert</button>
+        <button class="btn btn-outline" id="optionsBtn" disabled>Advanced Options</button>
         <button class="btn btn-download" id="downloadBtn" disabled>Download JSON</button>
       </div>
       <div id="status" style="margin-top:.75rem;font-size:.9rem;color:#666;"></div>
       <div id="result"></div>
 
+    </div>
+  </div>
+
+  <div class="modal" id="optionsModal">
+    <div class="modal-content">
+      <h3>Advanced Options</h3>
+
+      <div class="modal-section">
+        <h4>Metadata</h4>
+        <label><input type="checkbox" id="optMeta" checked> Include channels / frames count</label>
+      </div>
+
+      <div class="modal-section" id="attrsSection">
+        <h4>Attributes</h4>
+        <p class="modal-hint">Select which attributes to include in the JSON output</p>
+        <div id="attrCheckboxes"></div>
+      </div>
+
+      <div class="modal-section">
+        <h4>Data</h4>
+        <label><input type="checkbox" id="optSamples" checked> Include samples data</label>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" id="modalDownloadBtn">Download</button>
+        <button class="btn" style="background:#666;" id="modalCancelBtn">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -131,30 +172,41 @@
 
 <script>
 let worker = null;
-let downloadUrl = null;
 let channels = 0;
 let frames = 0;
 let attrs = {};
-let jsonPrefix = '';
-let jsonSuffix = '';
-let blobParts = [];
+let convId = '';
+let samplesParts = []; // sample JSON chunks, first without leading comma
 let firstChunk = true;
 let processedFrames = 0;
 let timerStart = 0;
+let includeMeta = true;
+let includeSamples = true;
+let attrSelections = {};
+let estimatedMb = 0;
 
-document.getElementById('convertBtn').addEventListener('click', convertFile);
-document.getElementById('downloadBtn').addEventListener('click', downloadResult);
-document.getElementById('h5File').addEventListener('change', () => {
-  document.getElementById('result').innerHTML = '';
-  document.getElementById('status').textContent = '';
+const $ = id => document.getElementById(id);
+
+$('convertBtn').addEventListener('click', convertFile);
+$('downloadBtn').addEventListener('click', downloadResult);
+$('optionsBtn').addEventListener('click', openOptions);
+$('modalCancelBtn').addEventListener('click', closeOptions);
+$('modalDownloadBtn').addEventListener('click', () => {
+  includeMeta = $('optMeta').checked;
+  includeSamples = $('optSamples').checked;
+  const cbs = $('attrCheckboxes').querySelectorAll('input[type="checkbox"]');
+  cbs.forEach(cb => { attrSelections[cb.dataset.key] = cb.checked; });
+  closeOptions();
+  downloadResult();
+});
+$('h5File').addEventListener('change', () => {
+  $('result').innerHTML = '';
+  $('status').textContent = '';
 });
 
 function convertFile() {
-  const input = document.getElementById('h5File');
-  const btn = document.getElementById('convertBtn');
-  const status = document.getElementById('status');
-  const result = document.getElementById('result');
-  const downloadBtn = document.getElementById('downloadBtn');
+  const input = $('h5File');
+  const status = $('status');
 
   if (!input.files.length) {
     status.textContent = 'Select a .h5 file first';
@@ -163,16 +215,17 @@ function convertFile() {
 
   if (worker) { worker.terminate(); worker = null; }
 
-  btn.disabled = true;
-  downloadBtn.disabled = true;
-  if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
+  $('convertBtn').disabled = true;
+  $('downloadBtn').disabled = true;
+  $('optionsBtn').disabled = true;
   channels = 0; frames = 0; attrs = {};
-  jsonPrefix = ''; jsonSuffix = ''; blobParts = [];
-  firstChunk = true; processedFrames = 0;
+  convId = ''; samplesParts = [];
+  firstChunk = true; processedFrames = 0; estimatedMb = 0;
+  includeMeta = true; includeSamples = true; attrSelections = {};
   timerStart = performance.now();
 
   status.textContent = 'Starting worker...';
-  result.innerHTML = '<div class="loading"><div class="spinner"></div>Processing...</div>';
+  $('result').innerHTML = '<div class="loading"><div class="spinner"></div>Processing...</div>';
 
   try {
     worker = new Worker('/worker.js');
@@ -186,14 +239,13 @@ function convertFile() {
           channels = p.channels;
           frames = p.frames;
           attrs = p.attributes;
+          convId = 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-          const id = 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-          jsonPrefix = '{"id":' + JSON.stringify(id) + ',"channels":' + channels + ',"frames":' + frames + ',"attributes":' + JSON.stringify(attrs) + ',"samples":[';
-          jsonSuffix = ']}';
+          attrSelections = {};
+          Object.keys(attrs).forEach(k => { attrSelections[k] = true; });
 
-          const estimatedSize = frames * channels * 7;
-          const sizeMb = (estimatedSize / (1024 * 1024)).toFixed(0);
-          status.textContent = 'Processing ' + frames.toLocaleString() + ' frames \u00d7 ' + channels + ' channels (~' + sizeMb + ' MB JSON)...';
+          estimatedMb = ((frames * channels * 7) / (1024 * 1024));
+          status.textContent = 'Processing ' + frames.toLocaleString() + ' frames \u00d7 ' + channels + ' channels (~' + estimatedMb.toFixed(0) + ' MB JSON)...';
           break;
         }
 
@@ -205,12 +257,12 @@ function convertFile() {
             const preview = JSON.stringify({ channels, frames, attributes: attrs, samples: values }, null, 2);
             const lines = preview.split('\n');
             const truncated = lines.slice(0, 22).join('\n') + '\n  ...';
-            result.innerHTML = '<pre>' + escapeHtml(truncated) + '</pre>';
+            $('result').innerHTML = '<pre>' + escapeHtml(truncated) + '</pre>';
 
-            blobParts.push(jsonPrefix + p.json);
+            samplesParts.push(p.json);
             firstChunk = false;
           } else {
-            blobParts.push(',' + p.json);
+            samplesParts.push(',' + p.json);
           }
 
           processedFrames = p.end;
@@ -222,32 +274,25 @@ function convertFile() {
         }
 
         case 'done': {
-          blobParts.push(jsonSuffix);
-          const blob = new Blob(blobParts, { type: 'application/json' });
-          downloadUrl = URL.createObjectURL(blob);
-          blobParts = [];
-
           const elapsed = ((performance.now() - timerStart) / 1000).toFixed(1);
-          const mb = (blob.size / (1024 * 1024)).toFixed(1);
-          document.getElementById('status').innerHTML =
+          status.innerHTML =
             '<span style="color:#059669;">\u2713</span> Converted in ' + elapsed +
-            's &mdash; ' + channels + ' channels, ' + frames.toLocaleString() +
-            ' frames (' + mb + ' MB JSON)';
-          document.getElementById('downloadBtn').disabled = false;
-          document.getElementById('result').innerHTML =
-            result.innerHTML +
-            '<p style="font-size:.85rem;color:#888;margin-top:.5rem;">Download ready &mdash; ' + mb + ' MB</p>';
-          document.getElementById('convertBtn').disabled = false;
+            's &mdash; ' + channels + ' channels, ' + frames.toLocaleString() + ' frames';
+          $('downloadBtn').disabled = false;
+          $('optionsBtn').disabled = false;
+          $('convertBtn').disabled = false;
+          $('result').innerHTML =
+            $('result').innerHTML +
+            '<p style="font-size:.85rem;color:#888;margin-top:.5rem;">Conversion complete. Use Advanced Options to customize the output, or Download to save now.</p>';
           worker.terminate();
           worker = null;
           break;
         }
 
         case 'error': {
-          document.getElementById('status').textContent = '';
-          document.getElementById('result').innerHTML =
-            '<p style="color:#ef4444;">Error: ' + escapeHtml(msg.payload) + '</p>';
-          document.getElementById('convertBtn').disabled = false;
+          status.textContent = '';
+          $('result').innerHTML = '<p style="color:#ef4444;">Error: ' + escapeHtml(msg.payload) + '</p>';
+          $('convertBtn').disabled = false;
           worker.terminate();
           worker = null;
           break;
@@ -256,27 +301,83 @@ function convertFile() {
     };
 
     worker.onerror = function (err) {
-      document.getElementById('status').textContent = '';
-      document.getElementById('result').innerHTML =
-        '<p style="color:#ef4444;">Worker error: ' + escapeHtml(err.message) + '</p>';
-      document.getElementById('convertBtn').disabled = false;
+      status.textContent = '';
+      $('result').innerHTML = '<p style="color:#ef4444;">Worker error: ' + escapeHtml(err.message) + '</p>';
+      $('convertBtn').disabled = false;
       worker = null;
     };
 
     worker.postMessage({ type: 'open', file: input.files[0] });
   } catch (err) {
-    status.textContent = '';
-    result.innerHTML = '<p style="color:#ef4444;">Error: ' + escapeHtml(err.message) + '</p>';
-    btn.disabled = false;
+    $('status').textContent = '';
+    $('result').innerHTML = '<p style="color:#ef4444;">Error: ' + escapeHtml(err.message) + '</p>';
+    $('convertBtn').disabled = false;
   }
 }
 
+function buildJsonPrefix() {
+  let parts = ['{"id":' + JSON.stringify(convId)];
+
+  if (includeMeta) {
+    parts.push(',"channels":' + channels, ',"frames":' + frames);
+  }
+
+  const sel = {};
+  Object.keys(attrs).forEach(k => {
+    if (attrSelections[k] !== false) sel[k] = attrs[k];
+  });
+  parts.push(',"attributes":' + JSON.stringify(sel));
+
+  if (includeSamples) {
+    parts.push(',"samples":[');
+  }
+
+  return parts.join('');
+}
+
 function downloadResult() {
-  if (!downloadUrl) return;
+  const prefix = buildJsonPrefix();
+  const parts = [prefix, ...samplesParts];
+  if (includeSamples) {
+    parts.push(']}');
+  } else {
+    parts.push('}');
+  }
+
+  const blob = new Blob(parts, { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = downloadUrl;
+  a.href = url;
   a.download = 'recording_' + Date.now() + '.json';
   a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openOptions() {
+  const container = $('attrCheckboxes');
+  container.innerHTML = '';
+  const keys = Object.keys(attrs);
+  if (keys.length === 0) {
+    container.innerHTML = '<p style="color:#888;font-size:.85rem;">No attributes in this file.</p>';
+  } else {
+    keys.forEach(k => {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = attrSelections[k] !== false;
+      cb.dataset.key = k;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + k));
+      container.appendChild(label);
+    });
+  }
+  $('optMeta').checked = includeMeta;
+  $('optSamples').checked = includeSamples;
+  $('optionsModal').classList.add('show');
+}
+
+function closeOptions() {
+  $('optionsModal').classList.remove('show');
 }
 
 function escapeHtml(str) {
