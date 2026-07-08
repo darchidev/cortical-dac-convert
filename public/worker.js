@@ -179,6 +179,7 @@ function pickleParse(s) {
           skipWs();
           if (s[pos] === '.' || s[pos] === ')') break;
           if (s[pos] === 'a') { pos++; continue; }
+          if (s[pos] === 's') break;
           var val = parseValue();
           if (val !== undefined) arr.push(val);
         }
