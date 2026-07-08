@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CL1 H5 to JSON Converter</title>
-<script src="https://cdn.jsdelivr.net/npm/h5wasm@0.10.3/dist/iife/h5wasm.min.js"></script>
+
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
@@ -63,7 +63,7 @@
 
   <div class="info-box">
     <span>&#9889;</span>
-    <span>The conversion runs entirely in your browser via WebAssembly — no upload needed, no file size limits.</span>
+    <span>Processed locally via WebAssembly in a background worker — no upload needed, supports files larger than 2 GB.</span>
   </div>
 
   <div class="card">
@@ -104,7 +104,7 @@
 
   <div class="card">
     <div class="card-header">
-      <span>&#128187;</span> Browser Converter (no size limit)
+      <span>&#128187;</span> Browser Converter (handles large files)
     </div>
     <div class="card-body">
 
@@ -130,7 +130,17 @@
 </div>
 
 <script>
-let lastResult = null;
+let worker = null;
+let downloadUrl = null;
+let channels = 0;
+let frames = 0;
+let attrs = {};
+let jsonPrefix = '';
+let jsonSuffix = '';
+let blobParts = [];
+let firstChunk = true;
+let processedFrames = 0;
+let timerStart = 0;
 
 document.getElementById('convertBtn').addEventListener('click', convertFile);
 document.getElementById('downloadBtn').addEventListener('click', downloadResult);
@@ -139,7 +149,7 @@ document.getElementById('h5File').addEventListener('change', () => {
   document.getElementById('status').textContent = '';
 });
 
-async function convertFile() {
+function convertFile() {
   const input = document.getElementById('h5File');
   const btn = document.getElementById('convertBtn');
   const status = document.getElementById('status');
@@ -151,65 +161,122 @@ async function convertFile() {
     return;
   }
 
+  if (worker) { worker.terminate(); worker = null; }
+
   btn.disabled = true;
   downloadBtn.disabled = true;
-  lastResult = null;
-  status.textContent = 'Loading h5wasm...';
+  if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
+  channels = 0; frames = 0; attrs = {};
+  jsonPrefix = ''; jsonSuffix = ''; blobParts = [];
+  firstChunk = true; processedFrames = 0;
+  timerStart = performance.now();
+
+  status.textContent = 'Starting worker...';
   result.innerHTML = '<div class="loading"><div class="spinner"></div>Processing...</div>';
 
   try {
-    const t0 = performance.now();
+    worker = new Worker('/worker.js');
 
-    await h5wasm.ready;
-    const file = input.files[0];
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const memPath = '/tmp/convert.h5';
-    h5wasm.FS.writeFile(memPath, buf);
+    worker.onmessage = function (e) {
+      const msg = e.data;
 
-    const f = new h5wasm.File(memPath, 'r');
-    const ds = f.get('samples');
-    const samples = ds.value;
-    const totalFrames = ds.shape[0];
-    const channels = ds.shape[1];
+      switch (msg.type) {
+        case 'metadata': {
+          const p = msg.payload;
+          channels = p.channels;
+          frames = p.frames;
+          attrs = p.attributes;
 
-    const attrs = {};
-    if (f.attrs) {
-      for (const key of Object.keys(f.attrs)) {
-        try { attrs[key] = f.get_attribute(key, true); } catch {}
+          const id = 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+          jsonPrefix = '{"id":' + JSON.stringify(id) + ',"channels":' + channels + ',"frames":' + frames + ',"attributes":' + JSON.stringify(attrs) + ',"samples":[';
+          jsonSuffix = ']}';
+
+          const estimatedSize = frames * channels * 7;
+          const sizeMb = (estimatedSize / (1024 * 1024)).toFixed(0);
+          status.textContent = 'Processing ' + frames.toLocaleString() + ' frames \u00d7 ' + channels + ' channels (~' + sizeMb + ' MB JSON)...';
+          break;
+        }
+
+        case 'chunk': {
+          const p = msg.payload;
+
+          if (firstChunk) {
+            const values = p.json.split(',').slice(0, 50).map(Number);
+            const preview = JSON.stringify({ channels, frames, attributes: attrs, samples: values }, null, 2);
+            const lines = preview.split('\n');
+            const truncated = lines.slice(0, 22).join('\n') + '\n  ...';
+            result.innerHTML = '<pre>' + escapeHtml(truncated) + '</pre>';
+
+            blobParts.push(jsonPrefix + p.json);
+            firstChunk = false;
+          } else {
+            blobParts.push(',' + p.json);
+          }
+
+          processedFrames = p.end;
+          const pct = ((processedFrames / frames) * 100).toFixed(0);
+          status.textContent = 'Converting... ' + pct + '% (' + processedFrames.toLocaleString() + ' / ' + frames.toLocaleString() + ' frames)';
+
+          worker.postMessage({ type: 'nextChunk' });
+          break;
+        }
+
+        case 'done': {
+          blobParts.push(jsonSuffix);
+          const blob = new Blob(blobParts, { type: 'application/json' });
+          downloadUrl = URL.createObjectURL(blob);
+          blobParts = [];
+
+          const elapsed = ((performance.now() - timerStart) / 1000).toFixed(1);
+          const mb = (blob.size / (1024 * 1024)).toFixed(1);
+          document.getElementById('status').innerHTML =
+            '<span style="color:#059669;">\u2713</span> Converted in ' + elapsed +
+            's &mdash; ' + channels + ' channels, ' + frames.toLocaleString() +
+            ' frames (' + mb + ' MB JSON)';
+          document.getElementById('downloadBtn').disabled = false;
+          document.getElementById('result').innerHTML =
+            result.innerHTML +
+            '<p style="font-size:.85rem;color:#888;margin-top:.5rem;">Download ready &mdash; ' + mb + ' MB</p>';
+          document.getElementById('convertBtn').disabled = false;
+          worker.terminate();
+          worker = null;
+          break;
+        }
+
+        case 'error': {
+          document.getElementById('status').textContent = '';
+          document.getElementById('result').innerHTML =
+            '<p style="color:#ef4444;">Error: ' + escapeHtml(msg.payload) + '</p>';
+          document.getElementById('convertBtn').disabled = false;
+          worker.terminate();
+          worker = null;
+          break;
+        }
       }
-    }
-    f.close();
-    h5wasm.FS.unlink(memPath);
+    };
 
-    const samplesArr = Array.from(samples);
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+    worker.onerror = function (err) {
+      document.getElementById('status').textContent = '';
+      document.getElementById('result').innerHTML =
+        '<p style="color:#ef4444;">Worker error: ' + escapeHtml(err.message) + '</p>';
+      document.getElementById('convertBtn').disabled = false;
+      worker = null;
+    };
 
-    lastResult = { channels, frames: totalFrames, attributes: attrs, samples: samplesArr };
-
-    const preview = JSON.stringify({ channels, frames: totalFrames, attributes: attrs, samples: samplesArr.slice(0, 50) }, null, 2);
-    const lines = preview.split('\n');
-    const truncated = lines.slice(0, 22).join('\n') + '\n  ...';
-
-    status.innerHTML = `<span style="color:#059669;">&#10003;</span> Converted in ${elapsed}s &mdash; ${channels} channels, ${totalFrames.toLocaleString()} frames`;
-    result.innerHTML = `<pre>${escapeHtml(truncated)}</pre>`;
-    downloadBtn.disabled = false;
+    worker.postMessage({ type: 'open', file: input.files[0] });
   } catch (err) {
     status.textContent = '';
-    result.innerHTML = `<p style="color:#ef4444;">Error: ${escapeHtml(err.message)}</p>`;
-  } finally {
+    result.innerHTML = '<p style="color:#ef4444;">Error: ' + escapeHtml(err.message) + '</p>';
     btn.disabled = false;
   }
 }
 
 function downloadResult() {
-  if (!lastResult) return;
-  const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  if (!downloadUrl) return;
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `recording_${Date.now()}.json`;
+  a.href = downloadUrl;
+  a.download = 'recording_' + Date.now() + '.json';
   a.click();
-  URL.revokeObjectURL(url);
 }
 
 function escapeHtml(str) {
